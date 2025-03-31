@@ -1,5 +1,5 @@
 main : main.c dependencies/assembly.h
-	cc -o main main.c dependencies/assembly.c
+	cc -o itrmain main.c dependencies/assembly.c
 
 clean : 
-	rm main
+	rm itrmain
