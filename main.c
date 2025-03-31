@@ -8,36 +8,40 @@
 #include <signal.h>
 #include <unistd.h>
 
-
-// setting the assembly
-assembly_line_t line;
-
-void signal_handler(int sigNum){
-  if (sigNum == SIGINT){
-    printf("Freeing the assembly_line\n");
-    free_assembly_line(&line);
-    exit(0);
-  }
-  if (sigNum == SIGUSR1){
-    printf("Here print assembly stats\n");
-    print_assembly_stats(line);
-  }
-}
-
-
 typedef struct {
   side_t side;
   unsigned int position; 
 }armId ;
 
 
+// setting the assembly
+assembly_line_t line;
+// setting the arm handler thread
+pthread_t arm_handler_thread;
+
+void signal_handler(int sigNum){
+  if (sigNum == SIGINT){
+    printf("Freeing the assembly_line\n");
+    pthread_join(arm_handler_thread, NULL);
+    free_assembly_line(&line);
+    exit(EXIT_SUCCESS);
+  }
+  if (sigNum == SIGUSR1){
+    printf("The assembly stats are :\n");
+    print_assembly_stats(line);
+  }
+}
+
 // the thread used to call the right arm to be triggered
 // to join if sigint is received !
 static void* arm_handler() {
 
-  // here call the trigger_arm 
-  // todo en fct de la sortie error_t faire des trucs
-
+  int car_position = 0;
+  while (1) {
+    // call le bras à gauche et droite à car_position dans des nouveaux thread 
+    // gérer les erreurs retournée
+    // sleep(BELT_Period)
+  }
 }
 
 int main(int argc, char *argv[])
@@ -62,13 +66,10 @@ int main(int argc, char *argv[])
   setup_arm(line, PART_LIGHTS, RIGHT,4);
   setup_arm(line, PART_WINDOWS, LEFT, 5);
 
-  pthread_t arm_handler_thread;
+  // starting the arm handler thread
   pthread_create(&arm_handler_thread, NULL, &arm_handler, NULL);
 
+  
   run_assembly(line);
-  free_assembly_line(&line);
-
-
-  return EXIT_SUCCESS;
 }
 
