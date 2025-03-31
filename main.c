@@ -1,5 +1,6 @@
 #include "dependencies/assembly.h"
 #include <bits/types/sigevent_t.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,8 +13,9 @@ typedef struct {
 }armId ;
 
 
-static void timer_handler(union sigval sigev_value) {
-  armId* id = sigev_value.sival_ptr;
+// the thread used to call the right arm to be triggered
+// to join if sigint is received !
+static void* arm_handler() {
 
   // here call the trigger_arm 
   // todo en fct de la sortie error_t faire des trucs
@@ -33,29 +35,14 @@ int main(int argc, char *argv[])
   setup_arm(line, PART_LIGHTS, RIGHT,4);
   setup_arm(line, PART_WINDOWS, LEFT, 5);
 
+
+  pthread_t arm_handler_thread;
+  pthread_create(&arm_handler_thread, NULL, &arm_handler, NULL);
+
   run_assembly(line);
-
-  //Setup du timer
-  timer_t timefunc;
-  struct sigevent funev;
-  struct itimerspec funspec;
-
-  funev.sigev_notify = SIGEV_THREAD;
-
-  //Fonction a trigger 
-  funev.sigev_notify_function = timer_handler;
-
-  //Todo gérer plusieurs attributs de la fonction trigger_arm
-  funev.sigev_notify_attributes = NULL;
-
-  funspec.it_value.tv_nsec=0;
-  //Intervalle
-  funspec.it_interval.tv_nsec=BELT_PERIOD*1000000;
-
-  timer_create(CLOCK_REALTIME, &funev, &timefunc);
-  timer_settime(timefunc, 0, &funspec, NULL);
-
   free_assembly_line(&line);
+
+
   return EXIT_SUCCESS;
 }
 
