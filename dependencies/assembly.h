@@ -31,7 +31,7 @@
 
 // Probabilité de blocage d'une installation par un bras robot
 // Sous la forme 1/ONE_IN_BLOCK_CHANCE
-#define ONE_IN_BLOCK_CHANCE 100
+#define ONE_IN_BLOCK_CHANCE 1000000
 
 // Liste des erreurs pouvant être retournées par les différentes fonctions
 typedef enum {

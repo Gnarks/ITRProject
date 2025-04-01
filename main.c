@@ -34,16 +34,66 @@ void signal_handler(int sigNum){
 void* arm_handler(void *armid){
   armId *id = armid;
   setup_arm(line, id->part, id->side, id->position);
-  
-  unsigned long triggerTime = BELT_PERIOD * id->position * 10e6;
-   
+  long triggerTime = BELT_PERIOD * id->position;
+  long waitForRestart = BELT_PERIOD * (7 - id->position);
+
+  struct timespec time;
+  // first sleep a bit to not wake up to early
+  clock_gettime(CLOCK_REALTIME, &time);
+  time.tv_nsec += 500000;
+  clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &time, NULL);
+
   while(1){
     // tell the arm to sleep until triggerTime
-    struct timespec time;
     clock_gettime(CLOCK_REALTIME, &time);
-    time.tv_nsec += triggerTime;
-    clock_nanosleep( , TIMER_ABSTIME, &time, NULL);
-    printf("Je suis le bras en pos %u j'ai dodoté %lu\n", id->position, triggerTime);
+    time.tv_sec += triggerTime / 1000;
+    time.tv_nsec += triggerTime % 1000;
+    clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &time, NULL);
+
+    printf("suis le bras à la pos : %u side : %u je me trigger\n", id->position, id->side);
+    error_t er = trigger_arm(line, id->side, id->position);
+
+    switch (er) {
+    case OK:
+      printf("ok\n");
+      break;
+    case INSTALL_REQUIREMENTS:
+      printf("INSTALL_REQUIREMENTS\n");
+      break;
+    case LINE_STARTED:
+      printf("LINE_STARTED\n");
+      break;
+    case INCORRECT_POSITION:
+      printf("INCORRECT_POSITION\n");
+      break;
+    case INCORRECT_BELT_POSITION:
+      printf("INCORRECT_BELT_POSITION\n");
+      break;
+    case NON_EMPTY_POSITION:
+      printf("NON_EMPTY_POSITION\n");
+      break;
+    case TIME_ERROR:
+      printf("TIME_ERROR\n");
+      break;
+    case SEM_ERROR:
+      printf("SEM_ERROR\n");
+      break;
+    case MALLOC_ERROR:
+      printf("MALLOC_ERROR\n");
+      break;
+    case LINE_STOPPED:
+      printf("LINE_STOPPED\n");
+      break;
+    case INVALID_POINTER:
+      printf("INVALID_POINTER\n");
+      break;
+    }
+
+    clock_gettime(CLOCK_REALTIME, &time);
+    time.tv_sec += waitForRestart / 1000;
+    time.tv_nsec += waitForRestart % 1000;
+    clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &time, NULL);
+
     // sleep le BELT_Period * id.position 
     // essayer de arm_trigger avec id comme param
     // sleep jusqu'à ce que la line se restart (jusque position finale donc posfinale - pos)
@@ -55,7 +105,7 @@ int main(int argc, char *argv[]){
   // initialazing the assembly_line
   init_assembly_line(&line); 
 
-  armId depList[NUM_PARTS] =  {
+  armId depList[NUM_PARTS- 1] =  {
     {LEFT, PART_FRAME, 1}, 
     {LEFT, PART_ENGINE, 2},
     {RIGHT, PART_WHEELS, 2},
@@ -68,8 +118,9 @@ int main(int argc, char *argv[]){
   //may be put in global
   pthread_t* arm_threads = malloc(sizeof(pthread_t) * NUM_PARTS);
 
-  for (int i = 0; i < NUM_PARTS; i++) {
+  for (int i = 0; i < NUM_PARTS - 1; i++) {
     // setting the arm handler thread
+    printf(" first :pos %u  part %u side %u\n", depList[i].position, depList[i].side, depList[i].side);
     pthread_create(&arm_threads[i], NULL, arm_handler, &depList[i]);
   }
 
