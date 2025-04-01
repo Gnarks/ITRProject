@@ -1,9 +1,12 @@
 #include "dependencies/assembly.h"
+#include <asm-generic/errno-base.h>
+#include <bits/time.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <time.h>
 #include <unistd.h>
 
 typedef struct {
@@ -30,10 +33,17 @@ void signal_handler(int sigNum){
 
 void* arm_handler(void *armid){
   armId *id = armid;
-  printf("setup du bras : pos :%u side:%u part: %u\n", id->position, id->side,id->part);
   setup_arm(line, id->part, id->side, id->position);
   
+  unsigned long triggerTime = BELT_PERIOD * id->position * 10e6;
+   
   while(1){
+    // tell the arm to sleep until triggerTime
+    struct timespec time;
+    clock_gettime(CLOCK_REALTIME, &time);
+    time.tv_nsec += triggerTime;
+    clock_nanosleep( , TIMER_ABSTIME, &time, NULL);
+    printf("Je suis le bras en pos %u j'ai dodoté %lu\n", id->position, triggerTime);
     // sleep le BELT_Period * id.position 
     // essayer de arm_trigger avec id comme param
     // sleep jusqu'à ce que la line se restart (jusque position finale donc posfinale - pos)
