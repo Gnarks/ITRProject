@@ -17,8 +17,6 @@ typedef struct {
 // setting the assembly
 assembly_line_t line;
 
-
-
 void printError(error_t er){
     switch (er) {
     case OK:
@@ -71,9 +69,8 @@ void signal_handler(int sigNum){
 
 void* arm_handler(void *armid){
   armId *id = armid;
-  setup_arm(line, id->part, id->side, id->position);
   long triggerTime = BELT_PERIOD * id->position;
-  long waitForRestart = BELT_PERIOD * (7 - id->position);
+  long waitForRestart = BELT_PERIOD * (MAX_POSITION-2 - id->position);
 
   struct timespec time;
   // first sleep a bit to not wake up to early
@@ -88,19 +85,14 @@ void* arm_handler(void *armid){
     time.tv_nsec += triggerTime % 1000;
     clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &time, NULL);
 
-    printf("suis le bras à la pos : %u side : %u je me trigger\n", id->position, id->side);
+    // printf("suis le bras à la pos : %u side : %u je me trigger\n", id->position, id->side);
     error_t er = trigger_arm(line, id->side, id->position);
-
     printError(er);
 
     clock_gettime(CLOCK_REALTIME, &time);
     time.tv_sec += waitForRestart / 1000;
     time.tv_nsec += waitForRestart % 1000;
     clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &time, NULL);
-
-    // sleep le BELT_Period * id.position 
-    // essayer de arm_trigger avec id comme param
-    // sleep jusqu'à ce que la line se restart (jusque position finale donc posfinale - pos)
   }
 }
 
@@ -124,6 +116,7 @@ int main(int argc, char *argv[]){
 
   for (int i = 0; i < NUM_PARTS - 1; i++) {
     // setting the arm handler thread
+    setup_arm(line, depList[i].part, depList[i].side, depList[i].position);
     pthread_create(&arm_threads[i], NULL, arm_handler, &depList[i]);
   }
 
