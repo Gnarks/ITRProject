@@ -1,61 +1,135 @@
 #include "dependencies/assembly.h"
-#include <bits/types/sigevent_t.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <time.h>
-
+#include <unistd.h>
 
 typedef struct {
   side_t side;
+  part_t part;
   unsigned int position; 
 }armId ;
 
 
-static void timer_handler(union sigval sigev_value) {
-  armId* id = sigev_value.sival_ptr;
+// setting the assembly
+assembly_line_t line;
 
-  // here call the trigger_arm 
-  // todo en fct de la sortie error_t faire des trucs
-
+void printError(error_t er){
+    switch (er) {
+    case OK:
+      printf("ok\n");
+      break;
+    case INSTALL_REQUIREMENTS:
+      printf("INSTALL_REQUIREMENTS\n");
+      break;
+    case LINE_STARTED:
+      printf("LINE_STARTED\n");
+      break;
+    case INCORRECT_POSITION:
+      printf("INCORRECT_POSITION\n");
+      break;
+    case INCORRECT_BELT_POSITION:
+      printf("INCORRECT_BELT_POSITION\n");
+      break;
+    case NON_EMPTY_POSITION:
+      printf("NON_EMPTY_POSITION\n");
+      break;
+    case TIME_ERROR:
+      printf("TIME_ERROR\n");
+      break;
+    case SEM_ERROR:
+      printf("SEM_ERROR\n");
+      break;
+    case MALLOC_ERROR:
+      printf("MALLOC_ERROR\n");
+      break;
+    case LINE_STOPPED:
+      printf("LINE_STOPPED\n");
+      break;
+    case INVALID_POINTER:
+      printf("INVALID_POINTER\n");
+      break;
+    }
 }
 
-int main(int argc, char *argv[])
-{ 
-  assembly_line_t line;
-  init_assembly_line(&line);
+void signal_handler(int sigNum){
+  if (sigNum == SIGINT){
+    printf("Freeing the assembly_line\n");
+    free_assembly_line(&line);
+    exit(EXIT_SUCCESS);
+  }
+  if (sigNum == SIGUSR1){
+    printf("The assembly stats are :\n");
+    print_assembly_stats(line);
+  }
+}
 
-  setup_arm(line, PART_FRAME, LEFT, 1);
-  setup_arm(line, PART_ENGINE, LEFT, 2);
-  setup_arm(line, PART_WHEELS, RIGHT, 2);
-  setup_arm(line, PART_BODY, LEFT, 3);
-  setup_arm(line, PART_DOORS, LEFT, 4);
-  setup_arm(line, PART_LIGHTS, RIGHT,4);
-  setup_arm(line, PART_WINDOWS, LEFT, 5);
+void* arm_handler(void *armid){
+  armId *id = armid;
+  long triggerTime = BELT_PERIOD * id->position;
+  long waitForRestart = BELT_PERIOD * (MAX_POSITION-2 - id->position);
 
+  struct timespec time;
+  // first sleep a bit to not wake up to early
+  clock_gettime(CLOCK_REALTIME, &time);
+  time.tv_nsec += 8000000;
+  clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &time, NULL);
+
+  while(1){
+    // tell the arm to sleep until triggerTime
+    clock_gettime(CLOCK_REALTIME, &time);
+    time.tv_sec += triggerTime / 1000;
+    time.tv_nsec += triggerTime % 1000;
+    clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &time, NULL);
+
+    // printf("suis le bras à la pos : %u side : %u je me trigger\n", id->position, id->side);
+    error_t er = trigger_arm(line, id->side, id->position);
+    printError(er);
+
+    clock_gettime(CLOCK_REALTIME, &time);
+    time.tv_sec += waitForRestart / 1000;
+    time.tv_nsec += waitForRestart % 1000;
+    clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &time, NULL);
+  }
+}
+
+
+int main(int argc, char *argv[]){ 
+  // initialazing the assembly_line
+  init_assembly_line(&line); 
+
+  armId depList[NUM_PARTS- 1] =  {
+    {LEFT, PART_FRAME, 1}, 
+    {LEFT, PART_ENGINE, 2},
+    {RIGHT, PART_WHEELS, 2},
+    {LEFT, PART_BODY, 3 },
+    {LEFT, PART_DOORS, 4},
+    {RIGHT,PART_LIGHTS,  4},
+    {LEFT, PART_WINDOWS, 5},
+  }; 
+
+  //may be put in global
+  pthread_t* arm_threads = malloc(sizeof(pthread_t) * NUM_PARTS);
+
+  for (int i = 0; i < NUM_PARTS - 1; i++) {
+    // setting the arm handler thread
+    setup_arm(line, depList[i].part, depList[i].side, depList[i].position);
+    pthread_create(&arm_threads[i], NULL, arm_handler, &depList[i]);
+  }
+
+  // setting up the signals handling
+  struct sigaction sa;
+  sa.sa_handler = signal_handler;
+  sigemptyset(&sa.sa_mask);
+
+  sa.sa_flags = 0;
+  sigaction(SIGINT, &sa, NULL);
+  sigaction(SIGUSR1, &sa, NULL);
+  
   run_assembly(line);
-
-  //Setup du timer
-  timer_t timefunc;
-  struct sigevent funev;
-  struct itimerspec funspec;
-
-  funev.sigev_notify = SIGEV_THREAD;
-
-  //Fonction a trigger 
-  funev.sigev_notify_function = timer_handler;
-
-  //Todo gérer plusieurs attributs de la fonction trigger_arm
-  funev.sigev_notify_attributes = NULL;
-
-  funspec.it_value.tv_nsec=0;
-  //Intervalle
-  funspec.it_interval.tv_nsec=BELT_PERIOD*1000000;
-
-  timer_create(CLOCK_REALTIME, &funev, &timefunc);
-  timer_settime(timefunc, 0, &funspec, NULL);
-
-  free_assembly_line(&line);
-  return EXIT_SUCCESS;
 }
+
 
