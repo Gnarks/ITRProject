@@ -58,6 +58,7 @@ void printError(error_t er){
 void signal_handler(int sigNum){
   if (sigNum == SIGINT){
     printf("Freeing the assembly_line\n");
+    print_assembly_stats(line);
     free_assembly_line(&line);
     exit(EXIT_SUCCESS);
   }
@@ -71,28 +72,72 @@ void* arm_handler(void *armid){
   armId *id = armid;
   long triggerTime = BELT_PERIOD * id->position;
   long waitForRestart = BELT_PERIOD * (MAX_POSITION-2 - id->position);
+  // set the overshot inititaly to 0
+  // it's the difference between `abs time to wake up ` and `real time when we
+  // woke up`
+  struct timespec overshot;
+  overshot.tv_sec = 0;
+  overshot.tv_nsec = 0;
+  struct timespec now;
+  struct timespec sleepTo;
 
-  struct timespec time;
   // first sleep a bit to not wake up to early
-  clock_gettime(CLOCK_REALTIME, &time);
-  time.tv_nsec += 8000000;
-  clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &time, NULL);
+  clock_gettime(CLOCK_REALTIME, &sleepTo);
+  sleepTo.tv_nsec += 9000000;
+  clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &sleepTo, NULL);
+
+
+  unsigned long wakeupTimer_sec[] =
+  { triggerTime/1000+sleepTo.tv_sec,
+    (waitForRestart + triggerTime*2)/1000 +sleepTo.tv_sec,
+    (waitForRestart*2 + triggerTime*3)/1000+sleepTo.tv_sec,
+    (waitForRestart*3 + triggerTime*4)/1000+sleepTo.tv_sec,
+    (waitForRestart*4 + triggerTime*5)/1000+sleepTo.tv_sec,
+  };
+
+  unsigned long wakeupTimer_nsec[] =
+  { triggerTime%1000+sleepTo.tv_nsec,
+    (waitForRestart + triggerTime*2)%1000 +sleepTo.tv_nsec,
+    (waitForRestart*2 + triggerTime*3)%1000+sleepTo.tv_nsec,
+    (waitForRestart*3 + triggerTime*4)%1000+sleepTo.tv_nsec,
+    (waitForRestart*4 + triggerTime*5)%1000+sleepTo.tv_nsec,
+  };
+
+  int count = 0;
 
   while(1){
-    // tell the arm to sleep until triggerTime
-    clock_gettime(CLOCK_REALTIME, &time);
-    time.tv_sec += triggerTime / 1000;
-    time.tv_nsec += triggerTime % 1000;
-    clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &time, NULL);
 
+    // tell the arm to sleep until triggerTime
+    clock_gettime(CLOCK_REALTIME, &now);
+    sleepTo.tv_sec = now.tv_sec + triggerTime / 1000 ;
+    sleepTo.tv_nsec = now.tv_nsec + triggerTime % 1000 ;
+    clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &sleepTo, NULL);
+
+    // calcule à quel point l'voershot est grand
+    clock_gettime(CLOCK_REALTIME, &now);
+    overshot.tv_nsec = (now.tv_nsec - sleepTo.tv_nsec );
+    overshot.tv_sec = (now.tv_sec - sleepTo.tv_sec );
+
+    // printf("devait dormir jusque : %lu sec et %lu\n", wakeupTimer_sec[count], wakeupTimer_nsec[count]);
+    // printf("voulait dormir jusque : %lu sec et %lu\n", sleepTo.tv_sec, sleepTo.tv_nsec);
+    // printf("à dormit jusque : %lu sec et %lu\n", now.tv_sec, now.tv_nsec);
+    // printf("overshot is calc at : %lu\n", overshot.tv_nsec);
+    // printf("alors que ça devrait être : %lu \n", -wakeupTimer_nsec[count] + now.tv_nsec);
+
+    sleepTo.tv_sec = now.tv_sec + waitForRestart / 1000 ;
+    sleepTo.tv_nsec = now.tv_nsec + waitForRestart % 1000 ;
     // printf("suis le bras à la pos : %u side : %u je me trigger\n", id->position, id->side);
     error_t er = trigger_arm(line, id->side, id->position);
     printError(er);
 
-    clock_gettime(CLOCK_REALTIME, &time);
-    time.tv_sec += waitForRestart / 1000;
-    time.tv_nsec += waitForRestart % 1000;
-    clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &time, NULL);
+    clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &sleepTo, NULL);
+
+    clock_gettime(CLOCK_REALTIME, &now);
+    overshot.tv_nsec = (now.tv_nsec - sleepTo.tv_nsec);
+    overshot.tv_sec = (now.tv_sec - sleepTo.tv_sec);
+
+    count++;
+
   }
 }
 
