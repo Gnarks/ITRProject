@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <time.h>
 #include <unistd.h>
+#include <semaphore.h>
 
 typedef struct {
   side_t side;
@@ -13,6 +14,12 @@ typedef struct {
   unsigned int position; 
 }armId ;
 
+
+// semaphores to sync all arms
+sem_t unlock;
+sem_t lock;
+
+int armsReady =0;
 
 // setting the assembly
 assembly_line_t line;
@@ -81,27 +88,31 @@ void* arm_handler(void *armid){
   struct timespec now;
   struct timespec sleepTo;
 
+  // here wait for the threads to be synced
+
+  sem_post(&unlock);
+  sem_wait(&lock);
+
   // first sleep a bit to not wake up to early
   clock_gettime(CLOCK_REALTIME, &sleepTo);
   sleepTo.tv_nsec += 9000000;
   clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &sleepTo, NULL);
 
-
-  unsigned long wakeupTimer_sec[] =
-  { triggerTime/1000+sleepTo.tv_sec,
-    (waitForRestart + triggerTime*2)/1000 +sleepTo.tv_sec,
-    (waitForRestart*2 + triggerTime*3)/1000+sleepTo.tv_sec,
-    (waitForRestart*3 + triggerTime*4)/1000+sleepTo.tv_sec,
-    (waitForRestart*4 + triggerTime*5)/1000+sleepTo.tv_sec,
-  };
-
-  unsigned long wakeupTimer_nsec[] =
-  { triggerTime%1000+sleepTo.tv_nsec,
-    (waitForRestart + triggerTime*2)%1000 +sleepTo.tv_nsec,
-    (waitForRestart*2 + triggerTime*3)%1000+sleepTo.tv_nsec,
-    (waitForRestart*3 + triggerTime*4)%1000+sleepTo.tv_nsec,
-    (waitForRestart*4 + triggerTime*5)%1000+sleepTo.tv_nsec,
-  };
+  // unsigned long wakeupTimer_sec[] =
+  // { triggerTime/1000+sleepTo.tv_sec,
+  //   (waitForRestart + triggerTime*2)/1000 +sleepTo.tv_sec,
+  //   (waitForRestart*2 + triggerTime*3)/1000+sleepTo.tv_sec,
+  //   (waitForRestart*3 + triggerTime*4)/1000+sleepTo.tv_sec,
+  //   (waitForRestart*4 + triggerTime*5)/1000+sleepTo.tv_sec,
+  // };
+  //
+  // unsigned long wakeupTimer_nsec[] =
+  // { triggerTime%1000+sleepTo.tv_nsec,
+  //   (waitForRestart + triggerTime*2)%1000 +sleepTo.tv_nsec,
+  //   (waitForRestart*2 + triggerTime*3)%1000+sleepTo.tv_nsec,
+  //   (waitForRestart*3 + triggerTime*4)%1000+sleepTo.tv_nsec,
+  //   (waitForRestart*4 + triggerTime*5)%1000+sleepTo.tv_nsec,
+  // };
 
   int count = 0;
 
@@ -146,6 +157,16 @@ int main(int argc, char *argv[]){
   // initialazing the assembly_line
   init_assembly_line(&line); 
 
+  // setting up the signals handling
+  struct sigaction sa;
+  sa.sa_handler = signal_handler;
+  sigemptyset(&sa.sa_mask);
+
+  sa.sa_flags = 0;
+  sigaction(SIGINT, &sa, NULL);
+  sigaction(SIGUSR1, &sa, NULL);
+  
+
   armId depList[NUM_PARTS- 1] =  {
     {LEFT, PART_FRAME, 1}, 
     {LEFT, PART_ENGINE, 2},
@@ -159,21 +180,29 @@ int main(int argc, char *argv[]){
   //may be put in global
   pthread_t* arm_threads = malloc(sizeof(pthread_t) * NUM_PARTS);
 
+  //init the sem at 0 to block the arms
+  sem_init(&lock, NUM_PARTS -1, 0);
+  sem_init(&unlock, NUM_PARTS -1, 0);
+
   for (int i = 0; i < NUM_PARTS - 1; i++) {
     // setting the arm handler thread
     setup_arm(line, depList[i].part, depList[i].side, depList[i].position);
     pthread_create(&arm_threads[i], NULL, arm_handler, &depList[i]);
   }
 
-  // setting up the signals handling
-  struct sigaction sa;
-  sa.sa_handler = signal_handler;
-  sigemptyset(&sa.sa_mask);
+  //wait for all the thread to be initialized
+  int semval =0;
+  while (semval != NUM_PARTS -1 ) {
+    sem_getvalue(&unlock, &semval);
+    //printf("%d", armsReady);
+  }
+  //unlocks the arms  
+  for (int i = 0; i< NUM_PARTS -1 ;i++) {
+    sem_post(&lock);
+  }
+  sem_destroy(&lock);
+  sem_destroy(&unlock);
 
-  sa.sa_flags = 0;
-  sigaction(SIGINT, &sa, NULL);
-  sigaction(SIGUSR1, &sa, NULL);
-  
   run_assembly(line);
 }
 
