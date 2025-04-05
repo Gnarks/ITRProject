@@ -95,7 +95,7 @@ void* arm_handler(void *armid){
 
   // first sleep a bit to not wake up to early
   clock_gettime(CLOCK_REALTIME, &sleepTo);
-  sleepTo.tv_nsec += 9000000;
+  sleepTo.tv_nsec += BELT_PERIOD * 500000 ;
   clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &sleepTo, NULL);
 
   // unsigned long wakeupTimer_sec[] =
@@ -121,7 +121,7 @@ void* arm_handler(void *armid){
     // tell the arm to sleep until triggerTime
     clock_gettime(CLOCK_REALTIME, &now);
     sleepTo.tv_sec = now.tv_sec + triggerTime / 1000;
-    sleepTo.tv_nsec = now.tv_nsec + (triggerTime % 1000)*1000000  + (triggerTime*500);
+    sleepTo.tv_nsec = now.tv_nsec + (triggerTime % 1000)*1000000  ;
     clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &sleepTo, NULL);
 
     // calcule à quel point l'voershot est grand
@@ -136,7 +136,7 @@ void* arm_handler(void *armid){
     // printf("alors que ça devrait être : %lu \n", -wakeupTimer_nsec[count] + now.tv_nsec);
 
     sleepTo.tv_sec = now.tv_sec + waitForRestart / 1000 ;
-    sleepTo.tv_nsec = now.tv_nsec + (waitForRestart % 1000)* 1000000 + (waitForRestart*500);
+    sleepTo.tv_nsec = now.tv_nsec + (waitForRestart % 1000)* 1000000 ;
     // printf("suis le bras à la pos : %u side : %u je me trigger\n", id->position, id->side);
     error_t er = trigger_arm(line, id->side, id->position);
     printError(er);
